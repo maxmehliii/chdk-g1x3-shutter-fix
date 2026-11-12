@@ -44,6 +44,26 @@ Als Extra kann beim Einschalten ein **eigenes Startbild** statt des Canon-Logos 
 - Die Kamera startet über die Karte im **Wiedergabemodus**. Halb drücken wechselt wie gewohnt in den Aufnahmemodus.
 - Soll sie direkt im **Aufnahmemodus** starten (Objektiv fährt aus), halte die **Ein/Aus-Taste gedrückt, bis das Startbild erscheint**.
 
+## Schnellstart ohne Bauen
+
+Fertige Dateien gibt es unter **[Releases](https://github.com/MaxTechSupport/chdk-g1x3-shutter-fix/releases/latest)**:
+
+| Datei | Inhalt |
+|---|---|
+| `g1x3_GM1.00A_final.zip` | nur der Auslöser-Ersatz, Canon-Startbild bleibt. **Auf der Kamera getestet.** |
+| `g1x3_GM1.00A_startbild_beispiel.zip` | zusätzlich ein Beispiel-Startbild (Blende). Der Code ist derselbe wie im getesteten Startbild-Build, nur das Bild ist anders |
+
+Jedes ZIP enthält `DISKBOOT.BIN` und eine Kurzanleitung (`LIESMICH.txt`). Die Prüfsummen stehen in `SHA256SUMS.txt`.
+
+1. **Firmware prüfen:** Nur G1 X Mark III mit Firmware GM1.00A (im Kamera-Menü Version 1.0.0).
+2. **Karte formatieren:** SD-Karte (SDHC bis 32 GB) in der Kamera formatieren, das löscht alles. Sie muss FAT32 sein, exFAT geht nicht.
+3. **Karte bootfähig markieren:** „BOOTDISK“ in den Bootsektor schreiben, siehe [SD-Karte vorbereiten](#3-sd-karte-vorbereiten).
+4. **Datei kopieren:** `DISKBOOT.BIN` aus dem ZIP ins Hauptverzeichnis der Karte.
+5. **Karte auswerfen und den Schreibschutz-Schieber auf LOCK stellen.**
+   Nur mit LOCK startet die Kamera den Code von der Karte. Fotos und Videos werden trotzdem normal gespeichert.
+6. **Einschalten und loslegen:** Karte rein, einschalten, dann halb drücken + Q/SET = Foto. Siehe [Bedienung](#bedienung).
+   - Startbild-Version: im Menü „Startbild“ auf 2 stellen.
+
 ## Voraussetzungen und Sicherheit
 
 - **Nur die PowerShot G1 X Mark III mit Firmware GM1.00A.**
@@ -92,6 +112,7 @@ Die Kamera startet Code von der Karte nur unter drei Bedingungen:
    ```
    Unter Linux schreibst du die 8 Bytes `BOOTDISK` an Offset 0x1E0 der Partition (nicht des ganzen Geräts),
    z. B. mit `printf BOOTDISK | sudo dd of=/dev/sdX1 bs=1 seek=480 conv=notrunc`. Vorher unbedingt das richtige Gerät prüfen!
+   Unter Windows gibt es Programme, die SD-Karten für CHDK bootfähig machen (z. B. EOScard). Die habe ich nicht getestet.
 3. **`out/DISKBOOT.BIN` ins Hauptverzeichnis der Karte kopieren**, Karte auswerfen und den **Schreibschutzschieber auf LOCK** stellen.
 
 Der Port löscht das Schreibschutz-Bit in der Tastenabfrage. Canon speichert deshalb trotz LOCK ganz normal Fotos und Videos.
