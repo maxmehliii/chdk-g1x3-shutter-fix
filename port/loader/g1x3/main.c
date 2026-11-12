@@ -1,21 +1,21 @@
 /*
- * Loader g1x3 (PowerShot G1 X Mark III), nur Firmware GM1.00A.
+ * Loader g1x3 (PowerShot G1 X Mark III), firmware GM1.00A only.
  *
- * Ablauf wie loader/g7x2/main.c, aber jede Adresse aus dem g1x3-Dump
- * (Belege: NOTES.md, Abschnitt "Prompt 5 - Adressliste").
+ * Same flow as loader/g7x2/main.c, but every address from the g1x3 dump
+ * (evidence: docs/NOTES_de.md, section "Prompt 5 - Adressliste").
  *
- * Statt loader/generic/check_compat.c eine eigene, kleine Pruefung:
- * Es werden nur zwei belegte ROM-Stellen GELESEN. Passt etwas nicht,
- * blinkt die LED endlos und Canon wird NICHT neu gestartet.
- * (Akku raus beendet das, die Kamera startet danach normal von einer normalen Karte.)
+ * Instead of loader/generic/check_compat.c a small check of its own:
+ * Only two verified ROM locations are READ. If anything does not match,
+ * the LED blinks forever and Canon is NOT restarted.
+ * (Removing the battery ends this; afterwards the camera starts normally from a normal card.)
  */
 
 extern long *blob_chdk_core;
 extern long blob_chdk_core_size;
 
-#define FW_PID_ADR   0xE1F20270  // Halbwort P-ID (verifiziert)
-#define FW_VER_ADR   0xE05546BD  // "GM1.00A" (verifiziert, Sigfinder-Zeile "Firmware Ver")
-#define LED_GPIO     0xD20801DC  // LED0, Offset 0x1dc aus Canon-LED-Init (verifiziert)
+#define FW_PID_ADR   0xE1F20270  // halfword P-ID (verified)
+#define FW_VER_ADR   0xE05546BD  // "GM1.00A" (verified, sigfinder line "Firmware Ver")
+#define LED_GPIO     0xD20801DC  // LED0, offset 0x1dc from Canon's LED init (verified)
 #define LED_ON       0x024D0002
 #define LED_OFF      0x024C0003
 
@@ -45,7 +45,7 @@ static void check_compat_g1x3(void) {
     if (*(volatile unsigned short*)FW_PID_ADR != PLATFORMID)
         blink_forever();
     const char *v = (const char*)FW_VER_ADR;
-    for (i = 0; i < (int)sizeof(fw_ver); i++) {   // inkl. abschliessender 0
+    for (i = 0; i < (int)sizeof(fw_ver); i++) {   // incl. terminating 0
         if (v[i] != fw_ver[i])
             blink_forever();
     }
@@ -74,22 +74,22 @@ void __attribute__((noreturn)) my_restart()
 
         core_copy(src, dst, length);
 
-        // Lebenszeichen: LED0 an. Die Canon-Firmware schaltet sie beim Start selbst wieder.
+        // sign of life: LED0 on. The Canon firmware switches it again itself during start.
         *(volatile int*)LED_GPIO = LED_ON;
     }
 
     asm volatile (
-            "ldr    r2, =0xb5102101\n"  // erste 2 Befehle von sub_e05812b0 (unblock core1)
+            "ldr    r2, =0xb5102101\n"  // first 2 instructions of sub_e05812b0 (unblock core1)
             "ldr    r1, =0xe05812b0\n"  // GM1.00A
             "ldr    r0, [r1]\n"
             "cmp    r0, r2\n"
-            "bne    fail\n"             // falsches Muster: nichts aufrufen, stehen bleiben
+            "bne    fail\n"             // wrong pattern: call nothing, stop here
 
-            "movs   r0, %2\n"           // nur Core 0 weckt Core 1
+            "movs   r0, %2\n"           // only core 0 wakes core 1
             "bne    cont1\n"
             "orr    r1, #1\n"
             "movs   r0, #1\n"
-            "blx    r1\n"               // unblock core1 (SGI 10 an Core 1)
+            "blx    r1\n"               // unblock core1 (SGI 10 to core 1)
 
         "cont1:\n"
             "mov    r1, %1\n"
@@ -101,7 +101,7 @@ void __attribute__((noreturn)) my_restart()
             "ldr    r2, =0xe03a9a45\n"  // icache_flush_range
             "blx    r2\n"
             "mov    r0, %0\n"
-            "add    r0, r0, #1\n"       // Thumb-Einstieg
+            "add    r0, r0, #1\n"       // Thumb entry
             "bx     r0\n"
 
         "fail:\n"

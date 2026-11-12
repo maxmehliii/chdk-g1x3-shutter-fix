@@ -1,7 +1,7 @@
-# ENDVERSION g1x3 100a (GM1.00A): S1 gehalten + Q/SET = S2 (Ausloeser), sonst alles wie bei Canon.
-# Baut: Mini-Kern (boot.c, kbd_d.c) -> loader/g1x3 -> DISKBOOT.BIN (dancingbits 17). Kein CHDK-Core, kein Menue/OSD.
-# Canon-Startbild bleibt unveraendert.
-# Aufruf: ./build.sh final   (im Docker: make -C g1x3_final)
+# FINAL VERSION g1x3 100a (GM1.00A): S1 held + Q/SET = S2 (shutter), everything else as Canon.
+# Builds: mini core (boot.c, kbd_d.c) -> loader/g1x3 -> DISKBOOT.BIN (dancingbits 17). No CHDK core, no menu/OSD.
+# Canon's start-up image stays unchanged.
+# Usage: ./build.sh final   (inside Docker: make -C g1x3_final)
 topdir=../
 PLATFORM=g1x3
 PLATFORMSUB=100a

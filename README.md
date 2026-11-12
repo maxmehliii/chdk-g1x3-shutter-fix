@@ -1,198 +1,192 @@
-# Canon PowerShot G1 X Mark III: Auslöser-Ersatz per CHDK (S2 auf Q/SET)
+# Canon PowerShot G1 X Mark III: shutter-button fix via CHDK (S2 on Q/SET)
 
-> **English summary:** The full-press contact (S2) of my G1 X Mark III shutter button broke. Half-press (S1) still worked.
-> This is a minimal, RAM-only CHDK port for the G1 X Mark III, firmware **GM1.00A**, that fixes this.
-> **Hold half-press, then press Q/SET**, and the camera takes the picture as if the shutter had been pressed fully.
-> Everything else behaves exactly like Canon's firmware: no CHDK menu, no ALT mode, no OSD. Nothing is written to flash.
-> Optionally you can replace the start-up logo with your own image. Build: `./setup.sh && ./build.sh final`.
-> The documentation below is in German. The full reverse-engineering log, with evidence for every address, is in [docs/NOTES.md](docs/NOTES.md).
+## What this is
 
-## Worum es geht
+The second contact of my G1 X Mark III's shutter button broke: the full press (S2).
+The half press (S1, focus and exposure) still worked, but the camera could no longer take pictures.
 
-Bei meiner G1 X Mark III ist der zweite Kontakt des Auslösers kaputtgegangen, also das volle Durchdrücken (S2).
-Der halbe Druck (S1, Fokus und Belichtung) geht noch. Die Kamera konnte deshalb keine Fotos mehr machen.
+This project replaces the broken contact with another button:
 
-Dieses Projekt ersetzt den kaputten Kontakt durch eine andere Taste:
+**Hold the shutter button half-way, then press Q/SET → the camera takes the picture.**
 
-**Auslöser halb drücken und halten, dann Q/SET drücken → die Kamera löst aus.**
+Everything else stays exactly like Canon's firmware:
+- Q/SET on its own opens the Q menu as always.
+- Burst shooting and video work like with a real shutter button.
+- There is no visible CHDK: no menu, no ALT mode, no on-screen overlays.
 
-Sonst bleibt alles wie bei Canon:
-- Q/SET allein öffnet wie immer das Q-Menü.
-- Serienbild und Video funktionieren wie mit einem echten Auslöser.
-- Es gibt kein sichtbares CHDK: kein Menü, kein ALT-Modus, keine Einblendungen.
+Technically it is a **minimal port of [CHDK](https://chdk.fandom.com/wiki/CHDK)**.
+- The camera loads it from the SD card into RAM every time it is switched on.
+- Nothing is written to flash, not even settings or calibration data.
+- Without the prepared card the camera starts normally with Canon's firmware.
 
-Technisch ist es ein **Minimalport von [CHDK](https://chdk.fandom.com/wiki/CHDK)**.
-- Die Kamera lädt ihn bei jedem Einschalten von der SD-Karte in den Arbeitsspeicher.
-- In den Flash wird nichts geschrieben, auch nicht in Einstellungen oder Kalibrierdaten.
-- Ohne die vorbereitete Karte startet die Kamera ganz normal mit Canons Firmware.
+As an extra, a **custom start-up image** can replace the Canon logo at power-on (also RAM only).
 
-Als Extra kann beim Einschalten ein **eigenes Startbild** statt des Canon-Logos erscheinen (ebenfalls nur im RAM).
+## Controls
 
-## Bedienung
-
-| Situation | Was die Kamera sieht |
+| Situation | What the camera sees |
 |---|---|
-| Q/SET allein | Q/SET ganz normal (Q-Menü) |
-| Auslöser halb gedrückt (mind. ~50 ms), dann Q/SET | halber **und voller** Druck → Foto. Q/SET wird dabei vor Canon versteckt |
-| Q/SET gehalten, Auslöser weiter halb gedrückt | voller Druck bleibt (Serienbild, Video wie mit echtem Auslöser) |
-| Q/SET losgelassen | voller Druck los, halber Druck wie tatsächlich gedrückt |
-| Auslöser zuerst losgelassen | beides los. Q/SET bleibt versteckt, bis es losgelassen ist (kein Q-Menü nach dem Foto) |
-| Erst Q/SET, dann halb drücken | **kein Auslösen**. Q/SET ging schon an Canon (Q-Menü) |
-| alle anderen Tasten | unverändert |
+| Q/SET on its own | Q/SET as usual (Q menu) |
+| Shutter half-pressed (at least ~50 ms), then Q/SET | half **and full** press → photo. Q/SET is hidden from Canon |
+| Q/SET held, shutter still half-pressed | full press stays (burst, video like with a real shutter button) |
+| Q/SET released | full press released, half press as physically pressed |
+| Shutter released first | both released. Q/SET stays hidden until it is released (no Q menu after the photo) |
+| Q/SET first, then half-press | **no shot**. Q/SET already went to Canon (Q menu) |
+| all other buttons | unchanged |
 
-**Einschalten:**
-- Die Kamera startet über die Karte im **Wiedergabemodus**. Halb drücken wechselt wie gewohnt in den Aufnahmemodus.
-- Soll sie direkt im **Aufnahmemodus** starten (Objektiv fährt aus), halte die **Ein/Aus-Taste gedrückt, bis das Startbild erscheint**.
+**Power-on:**
+- Booting from the card, the camera starts in **playback mode**. A half press switches to shooting mode as usual.
+- To start directly in **shooting mode** (lens extends), **hold the power button until the start-up image appears**.
 
-## Schnellstart ohne Bauen
+## Quick start without building
 
-Fertige Dateien gibt es unter **[Releases](https://github.com/MaxTechSupport/chdk-g1x3-shutter-fix/releases/latest)**:
+Ready-made files are on the **[Releases](https://github.com/MaxTechSupport/chdk-g1x3-shutter-fix/releases/latest)** page:
 
-| Datei | Inhalt |
+| File | Contents |
 |---|---|
-| `g1x3_GM1.00A_final.zip` | nur der Auslöser-Ersatz, Canon-Startbild bleibt. **Auf der Kamera getestet.** |
-| `g1x3_GM1.00A_startbild_beispiel.zip` | zusätzlich ein Beispiel-Startbild (Blende). Der Code ist derselbe wie im getesteten Startbild-Build, nur das Bild ist anders |
+| `g1x3_GM1.00A_final.zip` | shutter fix only, Canon's start-up image stays. **Tested on the camera.** |
+| `g1x3_GM1.00A_splash_example.zip` | plus an example start-up image (an aperture). The code is the same as in the tested start-up-image build, only the picture differs |
 
-Jedes ZIP enthält `DISKBOOT.BIN` und eine Kurzanleitung (`LIESMICH.txt`). Die Prüfsummen stehen in `SHA256SUMS.txt`.
+Each ZIP contains `DISKBOOT.BIN` and short instructions (`README.txt`). Checksums are in `SHA256SUMS.txt`.
 
-1. **Firmware prüfen:** Nur G1 X Mark III mit Firmware GM1.00A (im Kamera-Menü Version 1.0.0).
-2. **Karte formatieren:** SD-Karte (SDHC bis 32 GB) in der Kamera formatieren, das löscht alles. Sie muss FAT32 sein, exFAT geht nicht.
-3. **Karte bootfähig markieren:** „BOOTDISK“ in den Bootsektor schreiben, siehe [SD-Karte vorbereiten](#3-sd-karte-vorbereiten).
-4. **Datei kopieren:** `DISKBOOT.BIN` aus dem ZIP ins Hauptverzeichnis der Karte.
-5. **Karte auswerfen und den Schreibschutz-Schieber auf LOCK stellen.**
-   Nur mit LOCK startet die Kamera den Code von der Karte. Fotos und Videos werden trotzdem normal gespeichert.
-6. **Einschalten und loslegen:** Karte rein, einschalten, dann halb drücken + Q/SET = Foto. Siehe [Bedienung](#bedienung).
-   - Startbild-Version: im Menü „Startbild“ auf 2 stellen.
+1. **Check the firmware:** G1 X Mark III with firmware GM1.00A only (camera menu shows version 1.0.0).
+2. **Format the card:** format an SD card (SDHC up to 32 GB) in the camera. This erases everything. It must be FAT32, exFAT does not work.
+3. **Mark the card bootable:** write "BOOTDISK" into the boot sector, see [Prepare the SD card](#3-prepare-the-sd-card).
+4. **Copy the file:** `DISKBOOT.BIN` from the ZIP into the root folder of the card.
+5. **Eject the card and set its write-protect slider to LOCK.**
+   The camera only runs code from the card when it is locked. Photos and videos are still saved normally.
+6. **Switch on and shoot:** insert the card, switch on, then half-press + Q/SET = photo. See [Controls](#controls).
+   - Start-up image version: set the camera menu **Start-up Image** to **2**.
 
-## Voraussetzungen und Sicherheit
+## Requirements and safety
 
-- **Nur die PowerShot G1 X Mark III mit Firmware GM1.00A.**
-  - Der Loader prüft beim Start Plattform-ID und Firmware-Text.
-  - Passt eines davon nicht, blinkt die Lampe neben dem Display dauerhaft und CHDK startet nicht. Dann Akku raus.
-  - Die Kamera-Firmware nicht aktualisieren, sonst passen die Adressen nicht mehr.
-- **Nur RAM.** Der Port ruft keine Funktion auf, die Flash, persistente Parameter oder Kalibrierdaten schreibt.
-  Die Liste dieser Funktionen steht in [docs/NOTES.md](docs/NOTES.md) (Prompt 4).
-- **Rückweg:** Akku raus, eine normale Karte rein (oder den Schreibschutzschieber auf „offen“). Dann startet Canons Firmware wie immer.
-- Nutzung auf eigene Gefahr. Das Projekt hat nichts mit Canon zu tun. Getestet ist es auf **einer** Kamera.
+- **PowerShot G1 X Mark III with firmware GM1.00A only.**
+  - The loader checks the platform ID and the firmware string at start.
+  - If either does not match, the lamp next to the screen blinks forever and CHDK does not start. Then remove the battery.
+  - Do not update the camera firmware, otherwise the addresses no longer match.
+- **RAM only.** The port calls no function that writes flash, persistent parameters or calibration data.
+  The list of these functions is in [docs/NOTES_de.md](docs/NOTES_de.md) (Prompt 4).
+- **Way back:** remove the battery, insert a normal card (or set the write-protect slider to "unlocked"). Canon's firmware then starts as always.
+- Use at your own risk. This project has nothing to do with Canon. It has been tested on **one** camera.
 
-## Nachbau Schritt für Schritt
+## Building it yourself, step by step
 
-### 1. Werkzeuge
+### 1. Tools
 
-- macOS oder Linux, `git`, `svn` (Subversion), Docker
-  - macOS: `brew install subversion colima docker`, danach `colima start`
-- Für eigene Startbilder zusätzlich Python 3 mit `pip install pillow numpy opencv-python`
+- macOS or Linux, `git`, `svn` (Subversion), Docker
+  - macOS: `brew install subversion colima docker`, then `colima start`
+- For custom start-up images also Python 3 with `pip install pillow numpy opencv-python`
 
-### 2. CHDK holen und bauen
+### 2. Get CHDK and build
 
 ```bash
-git clone <dieses-repository> && cd chdk-g1x3-shutter-fix
-./setup.sh            # holt CHDK trunk r6358 nach ./chdk und baut das Docker-Image "chdkbuild"
-./build.sh final      # → out/DISKBOOT.BIN (nur Auslöser-Ersatz, Canon-Startbild bleibt)
+git clone https://github.com/MaxTechSupport/chdk-g1x3-shutter-fix.git && cd chdk-g1x3-shutter-fix
+./setup.sh            # checks out CHDK trunk r6358 into ./chdk and builds the Docker image "chdkbuild"
+./build.sh final      # → out/DISKBOOT.BIN (shutter fix only, Canon's start-up image stays)
 ```
 
-Ein Firmware-Dump ist zum Bauen **nicht** nötig. Alle Adressen stehen schon in `port/`.
+You do **not** need a firmware dump to build. All addresses are already in `port/`.
 
-Der Build mit CHDK r6358 ist reproduzierbar. Mein auf der Kamera getesteter `final`-Build hat die SHA-256
-`35bf072cbedc9b6f74b221f0deed93d7eac9b5cca554f72acb004c974b7306e6`. Dein `out/DISKBOOT.BIN` sollte dieselbe Prüfsumme haben.
+The build with CHDK r6358 is reproducible. My `final` build, tested on the camera, has the SHA-256
+`35bf072cbedc9b6f74b221f0deed93d7eac9b5cca554f72acb004c974b7306e6`. Your `out/DISKBOOT.BIN` should have the same checksum.
 
-### 3. SD-Karte vorbereiten
+### 3. Prepare the SD card
 
-Die Kamera startet Code von der Karte nur unter drei Bedingungen:
+The camera only runs code from the card under three conditions:
 
-1. **FAT32.** exFAT wird nie als bootfähig erkannt.
-   - SDHC-Karten bis 32 GB kannst du in der Kamera formatieren.
-   - Größere Karten am Computer als FAT32 mit MBR formatieren.
-2. **„BOOTDISK“ an Offset 0x1E0 des FAT32-Bootsektors.** Unter macOS erledigt das `karte/sd_bootdisk.sh`.
-   Es prüft vorher, ob es wirklich eine externe SD-Karte mit FAT32 ist, und sichert den Bootsektor:
+1. **FAT32.** exFAT is never recognized as bootable.
+   - SDHC cards up to 32 GB can be formatted in the camera.
+   - Format larger cards on a computer as FAT32 with MBR.
+2. **"BOOTDISK" at offset 0x1E0 of the FAT32 boot sector.** On macOS, `sdcard/sd_bootdisk.sh` does this.
+   It first checks that it really is an external FAT32 SD card, and backs up the boot sector:
    ```bash
-   diskutil list external              # Disk-ID der Karte finden, z. B. disk4
-   ./karte/sd_bootdisk.sh status disk4
-   ./karte/sd_bootdisk.sh set disk4    # fragt nach sudo und nach der Disk-ID
+   diskutil list external                # find the card's disk ID, e.g. disk4
+   ./sdcard/sd_bootdisk.sh status disk4
+   ./sdcard/sd_bootdisk.sh set disk4     # asks for sudo and for the disk ID again
    ```
-   Unter Linux schreibst du die 8 Bytes `BOOTDISK` an Offset 0x1E0 der Partition (nicht des ganzen Geräts),
-   z. B. mit `printf BOOTDISK | sudo dd of=/dev/sdX1 bs=1 seek=480 conv=notrunc`. Vorher unbedingt das richtige Gerät prüfen!
-   Unter Windows gibt es Programme, die SD-Karten für CHDK bootfähig machen (z. B. EOScard). Die habe ich nicht getestet.
-3. **`out/DISKBOOT.BIN` ins Hauptverzeichnis der Karte kopieren**, Karte auswerfen und den **Schreibschutzschieber auf LOCK** stellen.
+   On Linux, write the 8 bytes `BOOTDISK` at offset 0x1E0 of the partition (not the whole device),
+   e.g. with `printf BOOTDISK | sudo dd of=/dev/sdX1 bs=1 seek=480 conv=notrunc`. Double-check the device first!
+   On Windows there are tools that make SD cards bootable for CHDK (e.g. EOScard). I have not tested them.
+3. **Copy `out/DISKBOOT.BIN` into the root folder of the card**, eject it and set the **write-protect slider to LOCK**.
 
-Der Port löscht das Schreibschutz-Bit in der Tastenabfrage. Canon speichert deshalb trotz LOCK ganz normal Fotos und Videos.
-**Diese Karte danach nicht mehr in der Kamera formatieren.** Sonst ist „BOOTDISK“ weg, und Karten über 32 GB werden zu exFAT.
+The port clears the write-protect bit in the button scan, so Canon saves photos and videos normally despite LOCK.
+**Do not format this card in the camera afterwards.** Otherwise "BOOTDISK" is gone, and cards over 32 GB become exFAT.
 
-### 4. Testen
+### 4. Test
 
-1. Karte rein, einschalten. Die Kamera startet normal, über die Karte im Wiedergabemodus.
-2. Halb drücken → Aufnahmemodus. Halb gedrückt halten und Q/SET drücken → Foto.
-3. Q/SET allein → Q-Menü.
+1. Insert the card, switch on. The camera starts normally; booting from the card it starts in playback mode.
+2. Half-press → shooting mode. Keep it half-pressed and press Q/SET → photo.
+3. Q/SET on its own → Q menu.
 
-Hängt etwas: Akku raus, normale Karte rein.
+If anything hangs: remove the battery, insert a normal card.
 
-## Eigenes Startbild (optional)
+## Custom start-up image (optional)
 
-Canons Startbild liegt im ROM. Beim Einschalten kopiert die Firmware es in einen RAM-Puffer und zeigt es von dort an.
-Der Build `startbild` ersetzt nur diesen RAM-Puffer, und das nur, wenn darin wirklich Canons Bild liegt.
-Beim nächsten Start ohne Karte ist alles wieder original.
+Canon's start-up image is stored in ROM. At power-on the firmware copies it into a RAM buffer and shows it from there.
+The `splash` build replaces only this RAM buffer, and only if it really contains Canon's image.
+On the next start without the card everything is original again.
 
 ```bash
-python3 startbild/make_startbild.py mein_bild.png                    # Hintergrund schwarz, automatisch eingepasst
-python3 startbild/make_startbild.py mein_bild.png --hintergrund ffffff --breite 400
-./build.sh startbild
+python3 splash/make_splash.py my_image.png                      # black background, fitted automatically
+python3 splash/make_splash.py my_image.png --background ffffff --width 400
+./build.sh splash
 ```
 
-**Wichtig:** Im Kamera-Menü **„Startbild“ auf 2 stellen.**
-- Canon meldet dem JPEG-Decoder nur bei Startbild 2 die volle Puffergröße von 12179 Byte. Bei Startbild 1 sind es nur 5182 Byte.
-- Steht die Einstellung auf 1, erscheint einfach das Canon-Logo. Das ist harmlos.
+**Important:** set the camera menu **Start-up Image** to **2**.
+- Only for setting 2 does Canon tell the JPEG decoder the full buffer size of 12179 bytes. For setting 1 it is just 5182 bytes.
+- If the setting is 1, the Canon logo simply appears. That is harmless.
 
-**Tipps:**
-- Das JPEG darf höchstens ~12 KB groß sein. Das Skript sucht automatisch die beste Qualität, die noch passt.
-- Flache Farben und klare Linien sehen viel besser aus als Fotos.
-- Schwarzer Hintergrund mit hellem Motiv braucht die wenigsten Bytes.
-- `startbild/beispiel.png` (eine Blende) ist das Standardbild.
+**Tips:**
+- The JPEG can be at most ~12 KB. The script automatically picks the best quality that still fits.
+- Flat colors and clean lines look much better than photos.
+- A black background with a bright subject needs the fewest bytes.
+- `splash/example.png` (an aperture) is the default image.
 
-**Canon-Schriftzug unter dem Bild:**
-- Er ist nicht im Repository. Das Skript kann ihn aus deinem **eigenen** Firmware-Dump holen:
-  `--logo-aus-dump PRIMARY.BIN`.
-- Den Dump erzeugt das Canon-Basic-Skript aus dem CHDK-Wiki
+**Canon lettering below the image:**
+- It is not in the repository. The script can take it from your **own** firmware dump:
+  `--logo-from-dump PRIMARY.BIN`.
+- The dump is made with the Canon Basic script from the CHDK wiki
   ([Canon Basic/Scripts/Dumper](https://chdk.fandom.com/wiki/Canon_Basic/Scripts/Dumper)).
 
-## Wie es funktioniert
+## How it works
 
-Das ist eine Kurzfassung. Alle Details mit Belegen aus dem Dump stehen in [docs/NOTES.md](docs/NOTES.md).
+This is a summary. All details, with evidence from the dump, are in the (German) development log [docs/NOTES_de.md](docs/NOTES_de.md).
 
-- **Kartenstart:** Die Firmware startet `DISKBOOT.BIN` von einer FAT32-Karte mit „BOOTDISK“ und Schreibschutz auf LOCK.
-  - Die Datei ist mit dancingbits Version 17 verschlüsselt.
-  - Der Loader (`port/loader/g1x3`) prüft Kamera und Firmware und kopiert einen kleinen Kern in den RAM.
-  - Dieser Kern startet Canons Firmware neu, mit wenigen eingehängten Änderungen. Den großen CHDK-Core gibt es hier nicht.
-- **S1/S2 bei der G1 X Mark III:** Die beiden Kontakte laufen nicht über die normale Tastenabfrage `physw_status`.
-  Sie laufen über Interrupts und den eigenen Task `PhySw_ReleaseSw` mit Zustandsmaschine.
-  - Der Port ersetzt diesen Task durch eine Kopie. Sie versteht eine zusätzliche Nachricht „virtuelles S2 drücken“.
-  - Solange das virtuelle S2 aktiv ist, hält die Kopie den S2-Pegel auf „gedrückt“.
-- **Tastenlogik** (`kbd_d.c`): Sie läuft in einer Kopie des Tasten-Tasks `PhySw`, direkt nachdem die Firmware die Tasten gelesen hat.
-  - Erkennt sie die Q/SET-Flanke bei stabil gehaltenem S1, versteckt sie Q/SET vor Canon und schaltet das virtuelle S2 ein.
-  - Loslassen löst alles wieder.
-- **Schreibschutz:** Der Kartenstart verlangt LOCK. Deshalb löscht der Port in der Tastenabfrage das Bit, mit dem Canon den Schieber sieht.
-- **Startbild:** Siehe oben. Zusätzlich trägt der Port im RAM-Zustand der Firmware ein, dass Bildsatz 2 schon im Puffer liegt.
-  Sonst würde Canon den Puffer vor der Anzeige wieder aus dem ROM füllen.
-- **Vorgehen in Stufen**, jede auf der Kamera getestet, bevor die nächste begann (`port/g1x3_stufe_*`):
-  - a/b: laden und sauber an Canon übergeben
-  - c/c2: Tasten nur lesen und auf die Karte loggen (Beispiel-Logs in `docs/logs/`)
-  - d: Tasten verändern
-  - Grundlage war der CHDK-Port der G7 X Mark II. Jede Adresse wurde im eigenen G1-X-III-Dump neu belegt.
+- **Card boot:** the firmware starts `DISKBOOT.BIN` from a FAT32 card with "BOOTDISK" and the write-protect slider on LOCK.
+  - The file is encoded with dancingbits version 17.
+  - The loader (`port/loader/g1x3`) checks camera and firmware and copies a small core into RAM.
+  - This core restarts Canon's firmware with a few hooked-in changes. The big CHDK core is not used here.
+- **S1/S2 on the G1 X Mark III:** the two contacts do not go through the normal button scan `physw_status`.
+  They go through interrupts and a dedicated task `PhySw_ReleaseSw` with its own state machine.
+  - The port replaces this task with a copy that understands one extra message, "press virtual S2".
+  - While the virtual S2 is active, the copy keeps the S2 level at "pressed".
+- **Button logic** (`kbd_d.c`): runs in a copy of the button task `PhySw`, right after the firmware has read the buttons.
+  - When it sees a Q/SET press while S1 is held stable, it hides Q/SET from Canon and switches on the virtual S2.
+  - Releasing undoes everything.
+- **Write protection:** card boot requires LOCK, so the port clears the bit through which Canon sees the slider.
+- **Start-up image:** see above. In addition the port records in the firmware's RAM state that image set 2 is already in the buffer.
+  Otherwise Canon would refill the buffer from ROM before showing it.
+- **Developed in stages**, each tested on the camera before the next began (`port/g1x3_stage_*`):
+  - a/b: load and hand over cleanly to Canon
+  - c/c2: only read the buttons and log them to the card (example logs in `docs/logs/`)
+  - d: change the buttons
+  - The log texts of stages c to d were translated to English after testing. Those builds differ from the tested ones only in these strings (stage a/b is bit-identical).
+  - The starting point was the CHDK port for the G7 X Mark II. Every address was re-verified in my own G1 X III dump.
 
-## Ordner
+## Folders
 
-| Ordner | Inhalt |
+| Folder | Contents |
 |---|---|
-| `port/` | der g1x3-Port. `build.sh` kopiert ihn in den CHDK-Baum `./chdk` |
-| `port/g1x3_final/` | Endversion: nur Auslöser-Ersatz |
-| `port/g1x3_startbild/` | Endversion + eigenes Startbild |
-| `port/g1x3_stufe_*/` | Teststufen aus der Entwicklung |
-| `port/loader/g1x3/`, `port/platform/g1x3/` | Loader und Plattform-Dateien (Stubs, Funktionslisten) |
-| `startbild/` | Startbild-Skript und Beispielbild |
-| `karte/` | Skript, das die SD-Karte bootfähig markiert (macOS) |
-| `docs/` | Entwicklungsprotokoll mit allen Adresslisten, Tasten-Logs |
+| `port/` | the g1x3 port. `build.sh` copies it into the CHDK tree `./chdk` |
+| `port/g1x3_final/` | final version: shutter fix only |
+| `port/g1x3_splash/` | final version + custom start-up image |
+| `port/g1x3_stage_*/` | test stages from development |
+| `port/loader/g1x3/`, `port/platform/g1x3/` | loader and platform files (stubs, function lists) |
+| `splash/` | start-up image script and example image |
+| `sdcard/` | script that marks the SD card bootable (macOS) |
+| `docs/` | development log (German) with all address lists, button logs |
 
-## Lizenz und Dank
+## License and thanks
 
-- **Lizenz:** GPL-2.0, wie CHDK (siehe `LICENSE`).
-- **Dank:** an das CHDK-Projekt und an die Autoren des G7-X-Mark-II-Ports, der als Vorlage diente.
-- **Nicht enthalten:** Canon-Firmware oder Teile davon als Datei (Dump, Bilder). „Canon“ und „PowerShot“ sind Marken von Canon Inc.
+- **License:** GPL-2.0, like CHDK (see `LICENSE`).
+- **Thanks** to the CHDK project and to the authors of the G7 X Mark II port, which served as the template.
+- **Not included:** Canon firmware or parts of it as files (dump, images). "Canon" and "PowerShot" are trademarks of Canon Inc.

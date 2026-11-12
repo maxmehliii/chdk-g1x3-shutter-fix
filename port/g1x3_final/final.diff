@@ -1,19 +1,19 @@
---- chdk/g1x3_stufe_d/boot.c	2026-11-12 15:15:28
-+++ chdk/g1x3_final/boot.c	2026-11-12 15:27:20
+--- g1x3_stage_d/boot.c
++++ g1x3_final/boot.c
 @@ -1,9 +1,9 @@
  /*
-- * boot.c - g1x3 (G1 X Mark III) GM1.00A - STUFE c (Testbuild Lese-Logger, nicht der endgueltige Port)
-+ * boot.c - g1x3 (G1 X Mark III) GM1.00A - ENDVERSION (= Stufe d ohne Logger)
+- * boot.c - g1x3 (G1 X Mark III) GM1.00A - STAGE c (test build with read-only logger, not the final port)
++ * boot.c - g1x3 (G1 X Mark III) GM1.00A - FINAL VERSION (= stage d without logger)
   *
-- * = boot.c aus g1x3_stufe_ab (auf der Kamera getestet) plus:
-- *   - CreateTask-Hook ersetzt zusaetzlich task_InitFileModules (Karte bereit -> Logger darf schreiben)
-- *   - task_Startup legt nach PhySw den Task "KeyLog" an (logger.c, liest nur)
-+ * = boot.c aus g1x3_stufe_d (auf der Kamera getestet), entfernt: Logger-Task, InitFileModules-Hook.
-+ *   - PhySw als mykbd_task (Tastenlogik kbd_d.c: S1 + Q/SET = S2, SD-Schreibschutzbit loeschen)
-+ *   - PhySw_ReleaseSw als Kopie mit virtuellem S2 (Option A)
+- * = boot.c from g1x3_stage_ab (tested on the camera) plus:
+- *   - the CreateTask hook also replaces task_InitFileModules (card ready -> logger may write)
+- *   - task_Startup creates the task "KeyLog" after PhySw (logger.c, read only)
++ * = boot.c from g1x3_stage_d (tested on the camera), removed: logger task, InitFileModules hook.
++ *   - PhySw as mykbd_task (key logic kbd_d.c: S1 + Q/SET = S2, clear SD write-protect bit)
++ *   - PhySw_ReleaseSw as a copy with virtual S2 (option A)
   *
-  * Inhalt: nur der Neustart der Canon-Firmware aus dem RAM.
-  *   - Kopie von boot() @0xE0020011 mit CreateTask-Hook (einziger Zweck: TricInit-Fix)
+  * Contents: only the restart of the Canon firmware from RAM.
+  *   - copy of boot() @0xE0020011 with CreateTask hook (sole purpose: TricInit fix)
 @@ -41,12 +41,6 @@
              "    cmp     r0, r3\n"
              "    it      eq\n"
@@ -25,13 +25,13 @@
 -            "    ldreq   r3, =init_file_modules_task_my\n"
 -            "exitHook:\n"
              "    pop    {r0}\n"
-             // die 8 ueberschriebenen Byte @0xdffc5ade ausfuehren, dann weiter in der Firmware
+             // execute the 8 overwritten bytes @0xdffc5ade, then continue in the firmware
              "    push    {r1, r2, r3, r4, r5, r6, r7, lr}\n"
 @@ -478,7 +472,6 @@
              "    bl      sub_e003d870\n"                // init_error_handlers
              "    bl      sub_e04569ca\n"
-             "    bl      sub_e004074a_my\n"             // PhySw anlegen, Task -> mykbd_task (Stufe c2/d)
--            "    bl      logger_start\n"               // + Task KeyLog (nur lesen)
+             "    bl      sub_e004074a_my\n"             // create PhySw, task -> mykbd_task (stage c2/d)
+-            "    bl      logger_start\n"               // + task KeyLog (read only)
              "    bl      sub_e02b09ee\n"
              "    bl      sub_e04569e0\n"
              "    bl      sub_e0554054\n"
@@ -44,7 +44,7 @@
 -}
 -
 -/*************************************************************/
--//** init_file_modules_task_my @ 0xE0456A0D (wie g7x2, ohne MBR-Patch)
+-//** init_file_modules_task_my @ 0xE0456A0D (as in g7x2, without MBR patch)
 -void __attribute__((naked,noinline)) init_file_modules_task_my() {
 -    asm volatile (
 -            "    push    {r4, r5, r6, lr}\n"
@@ -59,7 +59,7 @@
 -            "    bl      sub_e039d90c\n"                // PostLogicalEventToUI_FW
 -            "loc_e0456a28:\n"
 -            "    bl      sub_e04e46fc\n"
--            "    bl      logger_fs_ready\n"            // + Karte eingehaengt
+-            "    bl      logger_fs_ready\n"            // + card mounted
 -            "    cmp     r4, #0\n"
 -            "    bne     loc_e0456a3c\n"                //  return
 -            "    mov     r0, r5\n"

@@ -1,19 +1,19 @@
 /*
- * boot.c - g1x3 (G1 X Mark III) GM1.00A - ENDVERSION (= Stufe d ohne Logger)
+ * boot.c - g1x3 (G1 X Mark III) GM1.00A - FINAL VERSION (= stage d without logger)
  *
- * = boot.c aus g1x3_stufe_d (auf der Kamera getestet), entfernt: Logger-Task, InitFileModules-Hook.
- *   - PhySw als mykbd_task (Tastenlogik kbd_d.c: S1 + Q/SET = S2, SD-Schreibschutzbit loeschen)
- *   - PhySw_ReleaseSw als Kopie mit virtuellem S2 (Option A)
+ * = boot.c from g1x3_stage_d (tested on the camera), removed: logger task, InitFileModules hook.
+ *   - PhySw as mykbd_task (key logic kbd_d.c: S1 + Q/SET = S2, clear SD write-protect bit)
+ *   - PhySw_ReleaseSw as a copy with virtual S2 (option A)
  *
- * Inhalt: nur der Neustart der Canon-Firmware aus dem RAM.
- *   - Kopie von boot() @0xE0020011 mit CreateTask-Hook (einziger Zweck: TricInit-Fix)
- *   - Heap-Start hinter diesen Code verschieben (sub_e0020108)
- *   - Startkette sub_e0020320 -> sub_e0020530 -> Einschaltpruefung sub_e0040842
- *   - task_Startup OHNE Diskboot-Aufruf (sub_e058131c), mit SD-Stromzyklus (sub_e0543b3e)
- * NICHT enthalten: Spytask, CHDK-Core, Tasten-Hook (PhySw bleibt Canon), andere Task-Hooks.
+ * Contents: only the restart of the Canon firmware from RAM.
+ *   - copy of boot() @0xE0020011 with CreateTask hook (sole purpose: TricInit fix)
+ *   - move the heap start behind this code (sub_e0020108)
+ *   - start chain sub_e0020320 -> sub_e0020530 -> power-on check sub_e0040842
+ *   - task_Startup WITHOUT the diskboot call (sub_e058131c), with SD power cycle (sub_e0543b3e)
+ * NOT included: spytask, CHDK core, key hook (PhySw stays Canon), other task hooks.
  *
- * Erzeugt aus capdis-Ausgabe des g1x3-Dumps (Format -f=chdk), Aenderungen mit "+"/"-" markiert.
- * Jede aufgerufene oder gepatchte Adresse: NOTES.md, "Prompt 5 - Adressliste".
+ * Generated from capdis output of the g1x3 dump (format -f=chdk), changes marked with "+"/"-".
+ * Every called or patched address: docs/NOTES_de.md, "Prompt 5 - Adressliste".
  */
 
 extern long link_bss_start;
@@ -32,7 +32,7 @@ void startup(void) {
 }
 
 /*************************************************************/
-// CreateTask-Hook: nur TricInitTask wird ersetzt, alles andere geht unveraendert an Canon.
+// CreateTask hook: only TricInitTask is replaced, everything else goes to Canon unchanged.
 void __attribute__((naked,noinline)) CreateTask_my() {
     asm volatile (
             "    push   {r0}\n"
@@ -42,7 +42,7 @@ void __attribute__((naked,noinline)) CreateTask_my() {
             "    it      eq\n"
             "    ldreq   r3, =task_TricInitTask_my\n"
             "    pop    {r0}\n"
-            // die 8 ueberschriebenen Byte @0xdffc5ade ausfuehren, dann weiter in der Firmware
+            // execute the 8 overwritten bytes @0xdffc5ade, then continue in the firmware
             "    push    {r1, r2, r3, r4, r5, r6, r7, lr}\n"
             "    mov     r4, r3\n"
             "    mov.w   r3, #0x1000\n"
@@ -57,10 +57,10 @@ void __attribute__((naked,noinline)) boot() {
     asm volatile (
             "    mrc     p15, #0, r0, c0, c0, #5\n"     // +
             "    ands    r0, #0xf\n"                    // +
-            "    beq     loc_boot\n"                    // + Core 0 bootet
+            "    beq     loc_boot\n"                    // + core 0 boots
             "    adr     r0, loc_boot\n"                // +
             "    orr     r0, #1\n"                      // +
-            "    bl      sub_e05c01f8\n"                // + park core1 (wartet 2x auf SGI 10), dann weiter bei r0
+            "    bl      sub_e05c01f8\n"                // + park core1 (waits twice for SGI 10), then continue at r0
             "loc_boot:\n"
 
             "    ldr     r0, =0xe0020200\n"
@@ -72,7 +72,7 @@ void __attribute__((naked,noinline)) boot() {
             "    mrc     p15, #0, r5, c0, c0, #5\n"
             "    ands    r0, r5, #0xf\n"
             "    bne     loc_e0020044\n"
-            // Zusatzblock g1x3 (nur Core 0), 1:1 aus der Firmware
+            // extra block g1x3 (core 0 only), 1:1 from the firmware
             "    movw    r0, #0x1504\n"
             "    movt    r0, #0xd210\n"
             "    ldr     r1, [r0]\n"
@@ -132,10 +132,10 @@ void __attribute__((naked,noinline)) boot() {
             "    strlo   r2, [r3], #4\n"
             "    blo     loc_e00200ae\n"
 
-            // + CreateTask-Hook in die RAM-Kopie des Kernels schreiben (8 Byte @0xdffc5ade)
-            // Halbwortweise, weil das Ziel nicht wortausgerichtet ist
-            "    adr     r0, patch_CreateTask\n"        // Quelle
-            "    ldr     r1, =0xdffc5ade\n"             // Ziel: hook_CreateTask
+            // + write the CreateTask hook into the RAM copy of the kernel (8 bytes @0xdffc5ade)
+            // halfword by halfword, because the target is not word aligned
+            "    adr     r0, patch_CreateTask\n"        // source
+            "    ldr     r1, =0xdffc5ade\n"             // target: hook_CreateTask
             "    add     r2, r0, #8\n"
             "patch_hook_loop:\n"
             "    ldrh    r3, [r0], #2\n"
@@ -143,7 +143,7 @@ void __attribute__((naked,noinline)) boot() {
             "    cmp     r0, r2\n"
             "    blo     patch_hook_loop\n"
 
-            // Original: Cache-Operationen ueber die ganze Kernel-Kopie (jetzt inkl. Hook)
+            // original: cache operations over the whole kernel copy (now incl. hook)
             "    ldr     r0, =0xdffc4900\n"
             "    ldr     r1, =0x00011fb0\n"
             "    bl      sub_e03a9970\n"                // dcache_clean_range
@@ -155,26 +155,26 @@ void __attribute__((naked,noinline)) boot() {
 //          "    bx      r0\n"                          // -
             "    b       loc_e0020044\n"                // +
 
-            // Patch-Daten, gleiche Ausrichtung wie das Ziel (0xdffc5ade = 2 mod 4)
+            // patch data, same alignment as the target (0xdffc5ade = 2 mod 4)
             "    .align  2\n"
             "    .short  0\n"
             "patch_CreateTask:\n"
             "    ldr.w   pc, _createtask_my\n"
             "_createtask_my:\n"
-            "    .long   CreateTask_my + 1\n"           // Thumb-Adresse
+            "    .long   CreateTask_my + 1\n"           // Thumb address
             "    .align  1\n"
             "    .ltorg\n"
     );
 }
 
 /*************************************************************/
-//** sub_e0020108_my @ 0xE0020109 (Heap-Start, beide Cores)
+//** sub_e0020108_my @ 0xE0020109 (heap start, both cores)
 void __attribute__((naked,noinline)) sub_e0020108_my() {
     asm volatile (
-            // + Start-Modus wie im g7x2-Port: Der Aufruf sub_e003aafe in der Einschaltpruefung
-            //   entfaellt (siehe sub_e0040842_my), deshalb hier den Modus selbst setzen.
-            //   GPIO 0x168 (Ein/Aus) Bit 0x10000 gesetzt = nicht gedrueckt -> Wiedergabe 0x400000, sonst Aufnahme 0x200000.
-            //   Ziel: Variable 0x9e1c+8 (aus sub_e003aafe).
+            // + start mode as in the g7x2 port: the call sub_e003aafe in the power-on check
+            //   is dropped (see sub_e0040842_my), so the mode is set here.
+            //   GPIO 0x168 (power) bit 0x10000 set = not pressed -> playback 0x400000, otherwise record 0x200000.
+            //   target: variable 0x9e1c+8 (from sub_e003aafe).
             "    ldr     r0, =0xd2082168\n"             // +
             "    ldr     r0, [r0]\n"                    // +
             "    tst     r0, #0x10000\n"                // +
@@ -353,16 +353,16 @@ void __attribute__((naked,noinline)) sub_e0020530_my() {
 
             "    mrc     p15, #0, r0, c0, c0, #5\n"     // +
             "    ands    r0, r0, #0xf\n"                // +
-            "    bne     skip_unblock\n"                // + nur Core 0
+            "    bne     skip_unblock\n"                // + core 0 only
             "    movs    r0, #1\n"                      // +
-            "    bl      sub_e05812b0\n"                // + unblock core1, 2x noetig (Park-Routine wartet 2x)
+            "    bl      sub_e05812b0\n"                // + unblock core1, needed twice (park routine waits twice)
 
             "    movs    r0, #1\n"
             "    bl      sub_e05812b0\n"                // unblock core1
             "skip_unblock:\n"                           // +
 
             "    bl      sub_e002f0b8\n"                // IsNormalCameraMode_FW
-            "    bl      sub_e0040842_my\n"             // Patched (was sub_e0040842) Einschaltpruefung
+            "    bl      sub_e0040842_my\n"             // Patched (was sub_e0040842) power-on check
             "    cbz     r0, loc_e0020574\n"
             "    bl      sub_dffc59d4\n"
             "    ldr     r1, =0x006ce000\n"
@@ -374,7 +374,7 @@ void __attribute__((naked,noinline)) sub_e0020530_my() {
             "    str     r0, [sp]\n"
             "    movs    r1, #0x19\n"
             "    ldr     r0, =0xe0020594\n"             //  *"Startup"
-            "    bl      sub_dffc5ade\n"                // CreateTask (laeuft ueber den Hook)
+            "    bl      sub_dffc5ade\n"                // CreateTask (goes through the hook)
             "    movs    r0, #0\n"
             "    pop     {r3, pc}\n"
             "loc_e0020574:\n"
@@ -386,7 +386,7 @@ void __attribute__((naked,noinline)) sub_e0020530_my() {
 }
 
 /*************************************************************/
-//** sub_e0040842_my @ 0xE0040843 (Einschaltpruefung)
+//** sub_e0040842_my @ 0xE0040843 (power-on check)
 void __attribute__((naked,noinline)) sub_e0040842_my() {
     asm volatile (
             "    push.w  {r2, r3, r4, r5, r6, r7, r8, sb, sl, lr}\n"
@@ -428,14 +428,14 @@ void __attribute__((naked,noinline)) sub_e0040842_my() {
             "    orrs    r0, r1\n"
             "    orrs    r0, r4\n"
             "    orrs    r0, r6\n"
-//          "    beq     loc_e00408d4\n"                // - beim Neustart ist evtl. keine Taste mehr gedrueckt
+//          "    beq     loc_e00408d4\n"                // - on restart the key may no longer be pressed
             "loc_e00408be:\n"
             "    mov     r3, r8\n"
             "    strd    r4, r6, [sp]\n"
             "    mov     r2, r5\n"
             "    mov     r1, sb\n"
             "    mov     r0, r7\n"
-//          "    bl      sub_e003aafe\n"                // - Start-Modus, ersetzt in sub_e0020108_my
+//          "    bl      sub_e003aafe\n"                // - start mode, replaced in sub_e0020108_my
 //          "    bl      sub_e003aafc\n"                // -  return
             "    movs    r0, #1\n"
             "loc_e00408d4:\n"
@@ -462,8 +462,8 @@ void __attribute__((naked,noinline)) task_Startup_my() {
             "    bl      sub_e00207b4\n"
             "    bl      sub_e05812c0\n"                //  return
             "    bl      sub_e0558d8c\n"
-            "    bl      sub_e0543b3e\n"                // + SD-Stromzyklus (UHS-Fix wie g7x2, dort sub_e04d9986)
-//          "    bl      sub_e058131c\n"                // - StartDiskboot (sonst Bootschleife)
+            "    bl      sub_e0543b3e\n"                // + SD power cycle (UHS fix as in g7x2, there sub_e04d9986)
+//          "    bl      sub_e058131c\n"                // - StartDiskboot (otherwise boot loop)
             "    bl      sub_e0040266\n"
             "    bl      sub_e04569c4\n"
             "    bl      sub_e0020878\n"
@@ -471,7 +471,7 @@ void __attribute__((naked,noinline)) task_Startup_my() {
             "    bl      sub_e0558dc2\n"
             "    bl      sub_e003d870\n"                // init_error_handlers
             "    bl      sub_e04569ca\n"
-            "    bl      sub_e004074a_my\n"             // PhySw anlegen, Task -> mykbd_task (Stufe c2/d)
+            "    bl      sub_e004074a_my\n"             // create PhySw, task -> mykbd_task (stage c2/d)
             "    bl      sub_e02b09ee\n"
             "    bl      sub_e04569e0\n"
             "    bl      sub_e0554054\n"
@@ -489,7 +489,7 @@ void __attribute__((naked,noinline)) task_Startup_my() {
 }
 
 /*************************************************************/
-//** task_TricInitTask_my @ 0xE03B13FB (Dual-Core-Fix wie g7x2)
+//** task_TricInitTask_my @ 0xE03B13FB (dual-core fix as in g7x2)
 void __attribute__((naked,noinline)) task_TricInitTask_my() {
     asm volatile (
             "    push.w  {r0, r1, r2, r3, r4, r5, r6, r7, r8, sb, sl, fp, ip, lr}\n"
@@ -527,12 +527,12 @@ void __attribute__((naked,noinline)) task_TricInitTask_my() {
             "    lsls    r0, r7, #0x1f\n"
             "    beq     sub_e03b1454\n"                // jump to FW
 
-            "    ldr     r0, =0xd2050074\n"             // + Smac-Register
-            "    ldr     r0, [r0]\n"                    // + != 0: Core/Smac laeuft schon (vom ersten Start)
+            "    ldr     r0, =0xd2050074\n"             // + Smac register
+            "    ldr     r0, [r0]\n"                    // + != 0: core/Smac already running (from the first start)
             "    cmp     r0, #0\n"                      // +
             "    beq     tric1\n"                       // +
             "    ldr     r0, [r4]\n"                    // +
-            "    mov     r1, #0x80\n"                   // + SmacIdleCmp-Flag (FUN_e03bf7a4)
+            "    mov     r1, #0x80\n"                   // + SmacIdleCmp flag (FUN_e03bf7a4)
             "    bl      sub_dffcbc80\n"                // + SetEventFlag
             "tric1:\n"                                  // +
 
@@ -543,7 +543,7 @@ void __attribute__((naked,noinline)) task_TricInitTask_my() {
 }
 
 /*************************************************************/
-//** sub_e004074a_my @ 0xE004074B (Stufe c2/d): PhySw anlegen, 1:1 Kopie, nur der Task-Einstieg ist ersetzt
+//** sub_e004074a_my @ 0xE004074B (stage c2/d): create PhySw, 1:1 copy, only the task entry is replaced
 void __attribute__((naked,noinline)) sub_e004074a_my() {
     asm volatile (
             "    push    {r2, r3, r4, lr}\n"
@@ -558,7 +558,7 @@ void __attribute__((naked,noinline)) sub_e004074a_my() {
             "    movs    r1, #1\n"
             "    ldr     r3, =mykbd_task\n"             // Patched (was 0xe0040725 task_PhySw)
             "    movs    r0, #0\n"
-            "    lsls    r2, r1, #0xb\n"                // Stack 0x800 wie Canon
+            "    lsls    r2, r1, #0xb\n"                // stack 0x800 like Canon
             "    strd    r0, r1, [sp]\n"
             "    movs    r1, #0x13\n"
             "    ldr     r0, =0xe0040af8\n"             //  *"PhySw"
@@ -566,22 +566,22 @@ void __attribute__((naked,noinline)) sub_e004074a_my() {
             "    str     r0, [r4, #4]\n"
             "loc_e0040776:\n"
             "    pop.w   {r2, r3, r4, lr}\n"
-            "    b.w     sub_e0039f7c_my\n"             // PhySw_ReleaseSw anlegen, Task -> Kopie mit virtuellem S2 (Stufe d)
+            "    b.w     sub_e0039f7c_my\n"             // create PhySw_ReleaseSw, task -> copy with virtual S2 (stage d)
             "    .ltorg\n"
     );
 }
 
 /*************************************************************/
-//** mykbd_task (Stufe c2/d): 1:1 wie task_PhySw @ 0xE0040725, nur kbd_p1_f -> wrap_kbd_p1_f
+//** mykbd_task (stage c2/d): 1:1 like task_PhySw @ 0xE0040725, only kbd_p1_f -> wrap_kbd_p1_f
 void __attribute__((naked,noinline)) mykbd_task() {
     asm volatile (
             "    push    {r4, lr}\n"
-            "    ldr     r4, =0x000082b4\n"             // PhySw-Steuerblock: [0] laufen, [8] Wartezeit
+            "    ldr     r4, =0x000082b4\n"             // PhySw control block: [0] running, [8] wait time
             "    b       mykbd_chk\n"
             "mykbd_loop:\n"
             "    ldr     r0, [r4, #8]\n"
             "    bl      _SleepTask\n"                  // 0xdffc598f
-            "    bl      wrap_kbd_p1_f\n"               // statt kbd_p1_f 0xe0040a7d
+            "    bl      wrap_kbd_p1_f\n"               // instead of kbd_p1_f 0xe0040a7d
             "    cmp     r0, #1\n"
             "    bne     mykbd_chk\n"
             "    bl      sub_e0040478\n"                // kbd_p2_f
@@ -596,19 +596,19 @@ void __attribute__((naked,noinline)) mykbd_task() {
 }
 
 /*************************************************************/
-//** wrap_kbd_p1_f (Stufe c2/d): Anfang von kbd_p1_f @ 0xE0040A7D, Lesen ueber my_kbd_read_keys
+//** wrap_kbd_p1_f (stage c2/d): start of kbd_p1_f @ 0xE0040A7D, reading via my_kbd_read_keys
 void __attribute__((naked,noinline)) wrap_kbd_p1_f() {
     asm volatile (
             "    push    {r1, r2, r3, r4, r5, r6, r7, lr}\n"
             "    movs    r4, #0\n"
-            "    bl      my_kbd_read_keys\n"            // kbd_read_keys + SD-Schreibschutzbit loeschen (kbd_c2.c)
-            "    ldr.w   pc, =0xe0040a85\n"             // kbd_p1_f_cont (Firmware, endet mit pop {r1-r7,pc})
+            "    bl      my_kbd_read_keys\n"            // kbd_read_keys + clear SD write-protect bit (kbd_c2.c)
+            "    ldr.w   pc, =0xe0040a85\n"             // kbd_p1_f_cont (firmware, ends with pop {r1-r7,pc})
             "    .ltorg\n"
     );
 }
 
 /*************************************************************/
-//** sub_e0039f7c_my @ 0xE0039F7D (Stufe d): PhySw_ReleaseSw anlegen, 1:1, nur der Task-Einstieg ist ersetzt
+//** sub_e0039f7c_my @ 0xE0039F7D (stage d): create PhySw_ReleaseSw, 1:1, only the task entry is replaced
 void __attribute__((naked,noinline)) sub_e0039f7c_my() {
     asm volatile (
             "    push    {r2, r3, r4, lr}\n"
@@ -643,9 +643,9 @@ void __attribute__((naked,noinline)) sub_e0039f7c_my() {
 }
 
 /*************************************************************/
-//** task_PhySw_ReleaseSw_my @ 0xE0039EEF (Stufe d, Option A): 1:1 Kopie, plus virtuelles S2
-// Zusaetze (mit "+" markiert): Nachricht 4 = S2 druecken; im 10-ms-Poll (Nachricht 3) gilt der S2-Pegel als gedrueckt,
-// solange vs2_active gesetzt ist. Loslassen erledigt Canons eigener Poll, sobald vs2_active = 0.
+//** task_PhySw_ReleaseSw_my @ 0xE0039EEF (stage d, option A): 1:1 copy, plus virtual S2
+// Additions (marked "+"): message 4 = press S2; in the 10 ms poll (message 3) the S2 level counts as pressed
+// while vs2_active is set. Canon's own poll does the release as soon as vs2_active = 0.
 void __attribute__((naked,noinline)) task_PhySw_ReleaseSw_my() {
     asm volatile (
             "    ldr     r6, =0x00009e3c\n"
@@ -668,17 +668,17 @@ void __attribute__((naked,noinline)) task_PhySw_ReleaseSw_my() {
             "    beq     loc_e0039f34\n"
             "    cmp     r0, #2\n"
             "    beq     loc_e0039f38\n"
-            "    cmp     r0, #4\n"                 // + Nachricht 4 (von my_kbd_read_keys): virtuelles S2 druecken
+            "    cmp     r0, #4\n"                 // + message 4 (from my_kbd_read_keys): press virtual S2
             "    beq     rsw_vs2_press\n"          // +
             "    cmp     r0, #3\n"
             "    bne     loc_e0039ef6\n"
             "    ldr     r0, =0xd5013000\n"
             "    ldr     r1, [r0, #0x3c]\n"
             "    ldr     r0, [r0, #0x38]\n"
-            "    ldr     r2, =vs2_active\n"        // + virtuelles S2 aktiv?
+            "    ldr     r2, =vs2_active\n"        // + virtual S2 active?
             "    ldr     r2, [r2]\n"               // +
             "    cbz     r2, rsw_hw_s2\n"          // +
-            "    bic     r1, r1, #1\n"             // + dann S2-Pegel = 0 (gedrueckt), wie die echte Taste
+            "    bic     r1, r1, #1\n"             // + then S2 level = 0 (pressed), like the real button
             "rsw_hw_s2:\n"                         // +
             "    lsls    r1, r1, #0x1f\n"
             "    beq     loc_e0039f40\n"
@@ -729,16 +729,16 @@ void __attribute__((naked,noinline)) task_PhySw_ReleaseSw_my() {
             "    mov     r1, r2\n"
             "    bl      sub_e04f285e\n"
             "    b       loc_e0039ef6\n"
-            "rsw_vs2_press:\n"                     // + Nachricht 4
-            "    ldr     r2, =vs2_active\n"        // + nur wenn virtuelles S2 noch aktiv
+            "rsw_vs2_press:\n"                     // + message 4
+            "    ldr     r2, =vs2_active\n"        // + only if virtual S2 is still active
             "    ldr     r2, [r2]\n"               // +
             "    cmp     r2, #0\n"                 // +
             "    beq     loc_e0039ef6\n"           // +
-            "    ldrb    r1, [r6, #0xc]\n"         // + und nur, wenn Canon S1 gedrueckt hat (Zustand Bit0)
+            "    ldrb    r1, [r6, #0xc]\n"         // + and only if Canon has S1 pressed (state bit0)
             "    lsls    r1, r1, #0x1f\n"          // +
             "    beq     loc_e0039ef6\n"           // +
-            "    ldr     r0, =0x80000001\n"        // + Press S2, genau wie FUN_e0039e98 bei Pegel 0
-            "    bl      sub_e0039e0c\n"           // + Zustandsmaschine
+            "    ldr     r0, =0x80000001\n"        // + press S2, exactly like FUN_e0039e98 at level 0
+            "    bl      sub_e0039e0c\n"           // + state machine
             "    b       loc_e0039ef6\n"           // +
             "    .ltorg\n"
     );
