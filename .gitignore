@@ -1,0 +1,26 @@
+# CHDK-Quelltext (holt setup.sh) und Build-Ergebnisse
+/chdk/
+/out/
+*.BIN
+*.bin
+*.o
+*.d
+*.elf
+*.syms
+*.dump
+stubs_auto.S
+startbild_jpg.c
+
+# Firmware-Dumps und alles, was aus Canons ROM stammt, gehoeren NICHT ins Repository
+/dumps/
+PRIMARY.BIN
+*_rom.png
+
+# erzeugte Vorschau
+/startbild/startbild.jpg
+
+# private Startbilder (nur im lokalen Branch privat-*, nie veroeffentlichen)
+/startbild/privat/
+
+.DS_Store
+__pycache__/

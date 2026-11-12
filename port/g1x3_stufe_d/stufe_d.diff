@@ -1,0 +1,407 @@
+--- g1x3_stufe_c2/kbd_c2.c	2026-11-12 15:05:31
++++ g1x3_stufe_d/kbd_d.c	2026-11-12 15:15:49
+@@ -1,25 +1,89 @@
+ /*
+- * kbd_c2.c - g1x3 Stufe c2: einzige Aenderung gegenueber Canon im PhySw-Ablauf.
++ * kbd_d.c - g1x3 Stufe d: Tastenlogik "S1 gehalten + Q/SET = S2" (Option A).
+  *
+- * Die Firmware entscheidet "Karte schreibgeschuetzt" aus physw_status[0] Bit 0x20:
+- *   GetSDProtect_FW (0xe0040a19) -> 0xe003b0fc liest Tabelle 0xe063ee34 (+8 = Eintrag 0xe063ee3c,
+- *   info 0x01000205 -> Wort 0, Bit 5, Event 0x30a) und gibt (physw_status[0] >> 5) & 1 zurueck.
+- * Der Kartenboot verlangt den Schieber auf LOCK -> Bit = 1 -> Canon schreibt nichts auf die Karte.
+- * Wie in jedem CHDK-Port (core/kbd_common.c: physw_status[SD_READONLY_IDX] &= ~SD_READONLY_FLAG)
+- * wird dieses eine Bit nach jedem Einlesen geloescht. Alle Tastenbits bleiben unveraendert.
++ * Laeuft in mykbd_task (PhySw-Kopie), direkt nach dem vollstaendigen Einlesen der Tasten durch die Firmware
++ * und bevor kbd_p1_f_cont daraus Events macht. Nur hier wird physw_status gelesen und veraendert.
++ *
++ * 1. SD-Schreibschutzbit p0 0x20 loeschen (wie Stufe c2, sonst speichert Canon auf der LOCK-Karte nichts).
++ * 2. Tastenlogik (Tabelle in CLAUDE.md):
++ *    - S1 = Canon-Zustand 0x9e48 Bit0 (von PhySw_ReleaseSw, bereits entprellt), zusaetzlich >= 50 ms stabil.
++ *    - Q/SET = physw_status[2] Bit 0x2000, 0 = gedrueckt (Log Stufe c2).
++ *    - Q/SET-Flanke (los -> gedrueckt), waehrend S1 stabil gehalten:
++ *        Q/SET wird versteckt (Bit auf 1 = los) und das virtuelle S2 eingeschaltet:
++ *        vs2_active = 1 und Nachricht 4 an die Queue von PhySw_ReleaseSw (task_PhySw_ReleaseSw_my in boot.c).
++ *    - Q/SET gehalten und S1 gehalten: S2 bleibt (Serie/Video wie echter Ausloeser).
++ *    - S1 los: vs2_active = 0 (S2 los). Q/SET bleibt versteckt, bis es losgelassen ist.
++ *    - Q/SET los: vs2_active = 0, Q/SET wieder normal.
++ *    - Erst Q/SET, dann S1: keine Flanke waehrend S1 -> nichts passiert, Q/SET geht normal an Canon.
++ *    Das Loslassen von S2 erledigt Canons eigener 10-ms-Poll in PhySw_ReleaseSw, sobald vs2_active = 0.
++ *    Alle anderen Bits bleiben unveraendert.
+  */
+ extern void _kbd_read_keys(void);
++extern int  _GetSystemTime(void);
++extern int  _TryPostMessageQueue(int queue, int msg);
+ extern volatile unsigned int physw_status[3];
+ 
+ #define SD_READONLY_FLAG 0x00000020
+ #define SD_READONLY_IDX  0
++#define QSET_FLAG        0x00002000
++#define QSET_IDX         2
+ 
+-volatile unsigned int physw0_raw;     // Wort 0 so, wie die Hardware es geliefert hat (fuer das Log)
++#define RSW_BASE         0x00009e3c                                  // PhySw_ReleaseSw-Block (verifiziert)
++#define RSW_QUEUE        (*(volatile int *)(RSW_BASE + 0x08))        // Message-Queue
++#define RSW_STATE        (*(volatile unsigned int *)(RSW_BASE + 0x0c)) // = 0x9e48, Bit0 S1, Bit1 S2
++#define RSW_MSG_VS2      4                                           // neue Nachricht: virtuelles S2 druecken
+ 
++#define S1_STABLE_MS     50
++
++volatile int vs2_active;              // gelesen von task_PhySw_ReleaseSw_my
++volatile int qset_hidden;             // Q/SET wird vor Canon versteckt
++volatile unsigned int physw0_raw;     // Rohwoerter fuer das Log
++volatile unsigned int physw2_raw;
++
++static int s1_on, s1_t, qset_prev;
++
++static void vs2_set(int on)
++{
++    if (on) {
++        vs2_active = 1;
++        _TryPostMessageQueue(RSW_QUEUE, RSW_MSG_VS2);
++    } else {
++        vs2_active = 0;                // Canons Poll meldet UnpressSW2 innerhalb von 10 ms
++    }
++}
++
+ // aus wrap_kbd_p1_f (boot.c), anstelle des Firmware-Aufrufs kbd_read_keys in kbd_p1_f
+ void my_kbd_read_keys(void)
+ {
++    int now, s1, s1_stable, qset;
++
+     _kbd_read_keys();
+     physw0_raw = physw_status[SD_READONLY_IDX];
++    physw2_raw = physw_status[QSET_IDX];
+     physw_status[SD_READONLY_IDX] &= ~SD_READONLY_FLAG;
++
++    now  = _GetSystemTime();
++    s1   = RSW_STATE & 1;
++    qset = !(physw2_raw & QSET_FLAG);
++
++    if (s1) {
++        if (!s1_on) { s1_on = 1; s1_t = now; }
++    } else {
++        s1_on = 0;
++    }
++    s1_stable = s1_on && (now - s1_t) >= S1_STABLE_MS;
++
++    if (!qset) {                       // Q/SET los: alles zurueck
++        if (vs2_active) vs2_set(0);
++        qset_hidden = 0;
++    } else if (qset_hidden) {          // Q/SET gehalten, Kombination laeuft
++        if (!s1 && vs2_active) vs2_set(0);   // S1 zuerst losgelassen: S2 los, Q/SET bleibt versteckt
++    } else if (!qset_prev && s1_stable) {    // neue Q/SET-Flanke bei gehaltenem S1
++        qset_hidden = 1;
++        vs2_set(1);
++    }
++    qset_prev = qset;
++
++    if (qset_hidden)
++        physw_status[QSET_IDX] |= QSET_FLAG; // Canon sieht Q/SET "los"
+ }
+--- g1x3_stufe_c2/boot.c	2026-11-12 15:05:31
++++ g1x3_stufe_d/boot.c	2026-11-12 15:15:28
+@@ -477,7 +477,7 @@
+             "    bl      sub_e0558dc2\n"
+             "    bl      sub_e003d870\n"                // init_error_handlers
+             "    bl      sub_e04569ca\n"
+-            "    bl      sub_e004074a_my\n"             // PhySw anlegen, Task -> mykbd_task (Stufe c2)
++            "    bl      sub_e004074a_my\n"             // PhySw anlegen, Task -> mykbd_task (Stufe c2/d)
+             "    bl      logger_start\n"               // + Task KeyLog (nur lesen)
+             "    bl      sub_e02b09ee\n"
+             "    bl      sub_e04569e0\n"
+@@ -579,7 +579,7 @@
+ }
+ 
+ /*************************************************************/
+-//** sub_e004074a_my @ 0xE004074B (Stufe c2): PhySw anlegen, 1:1 Kopie, nur der Task-Einstieg ist ersetzt
++//** sub_e004074a_my @ 0xE004074B (Stufe c2/d): PhySw anlegen, 1:1 Kopie, nur der Task-Einstieg ist ersetzt
+ void __attribute__((naked,noinline)) sub_e004074a_my() {
+     asm volatile (
+             "    push    {r2, r3, r4, lr}\n"
+@@ -602,13 +602,13 @@
+             "    str     r0, [r4, #4]\n"
+             "loc_e0040776:\n"
+             "    pop.w   {r2, r3, r4, lr}\n"
+-            "    b.w     sub_e0039f7c\n"                // weiter in der Firmware (PhySw_ReleaseSw anlegen)
++            "    b.w     sub_e0039f7c_my\n"             // PhySw_ReleaseSw anlegen, Task -> Kopie mit virtuellem S2 (Stufe d)
+             "    .ltorg\n"
+     );
+ }
+ 
+ /*************************************************************/
+-//** mykbd_task (Stufe c2): 1:1 wie task_PhySw @ 0xE0040725, nur kbd_p1_f -> wrap_kbd_p1_f
++//** mykbd_task (Stufe c2/d): 1:1 wie task_PhySw @ 0xE0040725, nur kbd_p1_f -> wrap_kbd_p1_f
+ void __attribute__((naked,noinline)) mykbd_task() {
+     asm volatile (
+             "    push    {r4, lr}\n"
+@@ -632,7 +632,7 @@
+ }
+ 
+ /*************************************************************/
+-//** wrap_kbd_p1_f (Stufe c2): Anfang von kbd_p1_f @ 0xE0040A7D, Lesen ueber my_kbd_read_keys
++//** wrap_kbd_p1_f (Stufe c2/d): Anfang von kbd_p1_f @ 0xE0040A7D, Lesen ueber my_kbd_read_keys
+ void __attribute__((naked,noinline)) wrap_kbd_p1_f() {
+     asm volatile (
+             "    push    {r1, r2, r3, r4, r5, r6, r7, lr}\n"
+@@ -642,3 +642,140 @@
+             "    .ltorg\n"
+     );
+ }
++
++/*************************************************************/
++//** sub_e0039f7c_my @ 0xE0039F7D (Stufe d): PhySw_ReleaseSw anlegen, 1:1, nur der Task-Einstieg ist ersetzt
++void __attribute__((naked,noinline)) sub_e0039f7c_my() {
++    asm volatile (
++            "    push    {r2, r3, r4, lr}\n"
++            "    ldr     r4, =0x00009e3c\n"
++            "    ldr     r0, [r4, #4]\n"
++            "    cmp     r0, #0\n"
++            "    bne     loc_e0039fbc\n" //  return
++            "    movs    r1, #1\n"
++            "    ldr     r3, =task_PhySw_ReleaseSw_my\n" // Patched (was 0xe0039eef task_PhySw_ReleaseSw)
++            "    lsls    r2, r1, #0xa\n"
++            "    strd    r0, r1, [sp]\n"
++            "    movs    r1, #0x13\n"
++            "    ldr     r0, =0xe003a064\n" //  *"PhySw_ReleaseSw"
++            "    bl      sub_dffcc3d6\n" // CreateTaskStrictly_alt
++            "    str     r0, [r4, #4]\n"
++            "    movs    r1, #3\n"
++            "    ldr     r0, [r4, #8]\n"
++            "    movw    r2, #0x2710\n"
++            "    bl      sub_dffcc090\n" // PostMessageQueue
++            "    lsls    r0, r0, #0x1f\n"
++            "    beq     loc_e0039fbc\n" //  return
++            "    add     sp, #8\n"
++            "    movs    r0, #0\n"
++            "    mov.w   r2, #0x162\n"
++            "    pop.w   {r4, lr}\n"
++            "    ldr     r1, =0xe003a044\n" //  *"PhySwIsr.c"
++            "    b.w     sub_dffc5e24\n" // DebugAssert
++            "loc_e0039fbc:\n"
++            "    pop     {r2, r3, r4, pc}\n"
++            "    .ltorg\n"
++    );
++}
++
++/*************************************************************/
++//** task_PhySw_ReleaseSw_my @ 0xE0039EEF (Stufe d, Option A): 1:1 Kopie, plus virtuelles S2
++// Zusaetze (mit "+" markiert): Nachricht 4 = S2 druecken; im 10-ms-Poll (Nachricht 3) gilt der S2-Pegel als gedrueckt,
++// solange vs2_active gesetzt ist. Loslassen erledigt Canons eigener Poll, sobald vs2_active = 0.
++void __attribute__((naked,noinline)) task_PhySw_ReleaseSw_my() {
++    asm volatile (
++            "    ldr     r6, =0x00009e3c\n"
++            "    movs    r5, #0\n"
++            "    ldr     r4, =0x0006f754\n"
++            "    push    {r3, lr}\n"
++            "loc_e0039ef6:\n"
++            "    movs    r2, #0\n"
++            "    ldr     r0, [r6, #8]\n"
++            "    mov     r1, sp\n"
++            "    bl      sub_dffcbfb4\n" // ReceiveMessageQueue
++            "    cbz     r0, loc_e0039f0e\n"
++            "    movs    r0, #0\n"
++            "    mov.w   r2, #0x1bc\n"
++            "    ldr     r1, =0xe003a044\n" //  *"PhySwIsr.c"
++            "    bl      sub_dffc5e24\n" // DebugAssert
++            "loc_e0039f0e:\n"
++            "    ldr     r0, [sp]\n"
++            "    cmp     r0, #1\n"
++            "    beq     loc_e0039f34\n"
++            "    cmp     r0, #2\n"
++            "    beq     loc_e0039f38\n"
++            "    cmp     r0, #4\n"                 // + Nachricht 4 (von my_kbd_read_keys): virtuelles S2 druecken
++            "    beq     rsw_vs2_press\n"          // +
++            "    cmp     r0, #3\n"
++            "    bne     loc_e0039ef6\n"
++            "    ldr     r0, =0xd5013000\n"
++            "    ldr     r1, [r0, #0x3c]\n"
++            "    ldr     r0, [r0, #0x38]\n"
++            "    ldr     r2, =vs2_active\n"        // + virtuelles S2 aktiv?
++            "    ldr     r2, [r2]\n"               // +
++            "    cbz     r2, rsw_hw_s2\n"          // +
++            "    bic     r1, r1, #1\n"             // + dann S2-Pegel = 0 (gedrueckt), wie die echte Taste
++            "rsw_hw_s2:\n"                         // +
++            "    lsls    r1, r1, #0x1f\n"
++            "    beq     loc_e0039f40\n"
++            "    ldrb    r1, [r6, #0xc]\n"
++            "    lsls    r1, r1, #0x1e\n"
++            "    bpl     loc_e0039f40\n"
++            "    ldr     r1, [r4, #0xc]\n"
++            "    adds    r1, r1, #1\n"
++            "    str     r1, [r4, #0xc]\n"
++            "    b       loc_e0039f42\n"
++            "loc_e0039f34:\n"
++            "    movs    r0, #0\n"
++            "    b       loc_e0039f3a\n"
++            "loc_e0039f38:\n"
++            "    movs    r0, #1\n"
++            "loc_e0039f3a:\n"
++            "    bl      sub_e0039e98\n"
++            "    b       loc_e0039ef6\n"
++            "loc_e0039f40:\n"
++            "    str     r5, [r4, #0xc]\n"
++            "loc_e0039f42:\n"
++            "    ldrb    r1, [r6, #0xc]\n"
++            "    ands    r0, r1\n"
++            "    lsls    r0, r0, #0x1f\n"
++            "    beq     loc_e0039f52\n"
++            "    ldr     r0, [r4, #4]\n"
++            "    adds    r0, r0, #1\n"
++            "    str     r0, [r4, #4]\n"
++            "    b       loc_e0039f54\n"
++            "loc_e0039f52:\n"
++            "    str     r5, [r4, #4]\n"
++            "loc_e0039f54:\n"
++            "    ldr     r0, [r4, #0xc]\n"
++            "    cbz     r0, loc_e0039f60\n"
++            "    movs    r0, #1\n"
++            "    bl      sub_e0039e0c\n"
++            "    str     r5, [r4, #0xc]\n"
++            "loc_e0039f60:\n"
++            "    ldr     r0, [r4, #4]\n"
++            "    cbz     r0, loc_e0039f6c\n"
++            "    movs    r0, #0\n"
++            "    bl      sub_e0039e0c\n"
++            "    str     r5, [r4, #4]\n"
++            "loc_e0039f6c:\n"
++            "    movs    r3, #0\n"
++            "    ldr     r2, =0xe0039e03\n"
++            "    movw    r0, #0x2710\n"
++            "    mov     r1, r2\n"
++            "    bl      sub_e04f285e\n"
++            "    b       loc_e0039ef6\n"
++            "rsw_vs2_press:\n"                     // + Nachricht 4
++            "    ldr     r2, =vs2_active\n"        // + nur wenn virtuelles S2 noch aktiv
++            "    ldr     r2, [r2]\n"               // +
++            "    cmp     r2, #0\n"                 // +
++            "    beq     loc_e0039ef6\n"           // +
++            "    ldrb    r1, [r6, #0xc]\n"         // + und nur, wenn Canon S1 gedrueckt hat (Zustand Bit0)
++            "    lsls    r1, r1, #0x1f\n"          // +
++            "    beq     loc_e0039ef6\n"           // +
++            "    ldr     r0, =0x80000001\n"        // + Press S2, genau wie FUN_e0039e98 bei Pegel 0
++            "    bl      sub_e0039e0c\n"           // + Zustandsmaschine
++            "    b       loc_e0039ef6\n"           // +
++            "    .ltorg\n"
++    );
++}
+--- g1x3_stufe_c2/logger.c	2026-11-12 15:05:44
++++ g1x3_stufe_d/logger.c	2026-11-12 15:16:08
+@@ -1,8 +1,8 @@
+ /*
+- * logger.c - g1x3 Stufe c2: reiner LESE-Logger fuer Tasten (wie Stufe c).
++ * logger.c - g1x3 Stufe d: Tasten-Logger (liest nur). Zusaetzlich V = virtuelles S2 aktiv, H = Q/SET versteckt.
++ * p0/p2 sind Rohwoerter der Hardware (Canon sieht p0 ohne 0x20 und p2 mit 0x2000 = 1, solange H = 1).
+  * Neu in c2: p0 ist das Rohwort der Hardware (physw0_raw aus kbd_c2.c). Canon sieht p0 ohne Bit 0x20
+- * (SD-Schreibschutz). Nach dem ersten Schreibversuch ein LED-Zeichen: 2 s an = Datei geschrieben,
+- * 2 s schnelles Blinken = Schreiben fehlgeschlagen.
++ * (SD-Schreibschutz). Kein LED-Zeichen mehr (war im Betrieb nicht sichtbar).
+  *
+  * Liest alle 10 ms (nur lesen, nichts wird veraendert):
+  *   - physw_status[0..2]          (Canon-Tastenwoerter, 0x6c510)
+@@ -21,7 +21,8 @@
+ extern int  _Close(int fd);
+ extern int  _GetSystemTime(void);
+ extern volatile unsigned int physw_status[3];
+-extern volatile unsigned int physw0_raw;   // kbd_c2.c
++extern volatile unsigned int physw0_raw, physw2_raw;   // kbd_d.c
++extern volatile int vs2_active, qset_hidden;
+ 
+ #define O_WRONLY    0x001
+ #define O_CREAT     0x100
+@@ -35,11 +36,8 @@
+ #define RSW_STATE   (*(volatile unsigned int *)0x00009e48)
+ #define GPIO_S1     (*(volatile unsigned int *)0xd20821d8)
+ #define GPIO_S2     (*(volatile unsigned int *)0xd20821d4)
+-#define LED_GPIO    (*(volatile unsigned int *)0xD20801DC)   // LED0 (verifiziert, Prompt 5)
+-#define LED_ON      0x024D0002
+-#define LED_OFF     0x024C0003
+ 
+-#define NVAL 6
++#define NVAL 8
+ 
+ static volatile int fs_ready;
+ static char logbuf[LOG_MAX];
+@@ -88,10 +86,12 @@
+ {
+     v[0] = physw0_raw;          // Rohwert (Canon sieht ihn ohne Bit 0x20)
+     v[1] = physw_status[1];
+-    v[2] = physw_status[2];
++    v[2] = physw2_raw;
+     v[3] = RSW_STATE;
+     v[4] = (GPIO_S1 >> 16) & 1;
+     v[5] = (GPIO_S2 >> 16) & 1;
++    v[6] = vs2_active;
++    v[7] = qset_hidden;
+ }
+ 
+ static void put_line(unsigned int t, unsigned int nr, const unsigned int *v)
+@@ -103,7 +103,9 @@
+     put_hex(v[2], 8); put_str(" RSW=");
+     put_hex(v[3], 1); put_str(" S1=");
+     put_hex(v[4], 1); put_str(" S2=");
+-    put_hex(v[5], 1); put_str("\r\n");
++    put_hex(v[5], 1); put_str(" V=");
++    put_hex(v[6], 1); put_str(" H=");
++    put_hex(v[7], 1); put_str("\r\n");
+ }
+ 
+ static int write_file(void)
+@@ -117,21 +119,6 @@
+     return ok;
+ }
+ 
+-// einmalig nach dem ersten Schreibversuch: ok -> 2 s an, sonst 2 s schnell blinken
+-static void led_signal(int ok)
+-{
+-    int i;
+-    if (ok) {
+-        LED_GPIO = LED_ON;  _SleepTask(2000);
+-    } else {
+-        for (i = 0; i < 10; i++) {
+-            LED_GPIO = LED_ON;  _SleepTask(100);
+-            LED_GPIO = LED_OFF; _SleepTask(100);
+-        }
+-    }
+-    LED_GPIO = LED_OFF;
+-}
+-
+ static void logger_task(void)
+ {
+     unsigned int last[NVAL], cur[NVAL];
+@@ -143,15 +130,13 @@
+         _SleepTask(100);
+     _SleepTask(1000);
+ 
+-    put_str("KEYLOG g1x3 GM1.00A Stufe c2 - nur lesen (p0 = Rohwert, Canon sieht p0 ohne Bit 0x20 = SD-Schreibschutz)\r\n");
++    put_str("KEYLOG g1x3 GM1.00A Stufe d - S1+Q/SET = S2 (p0/p2 = Rohwerte, V = virtuelles S2, H = Q/SET versteckt)\r\n");
+     put_str("Zeit(ms)  Nr    p0..p2 = physw_status, RSW = Canon-Zustand S1/S2 (Bit0 S1, Bit1 S2), S1/S2 = GPIO (1 los, 0 gedrueckt)\r\n");
+     _SleepTask(2000);                       // Abstand zum Blinken der Canon-Startphase
+     read_vals(last);
+     put_line((unsigned int)_GetSystemTime(), nr++, last);
+     have = 1;
+-    i = write_file();
+-    led_signal(i);
+-    dirty = !i;
++    dirty = !write_file();
+     t_flush = _GetSystemTime();
+ 
+     while (1) {
+--- g1x3_stufe_c2/stubs_c.S	2026-11-12 15:05:10
++++ g1x3_stufe_d/stubs_c.S	2026-11-12 15:16:01
+@@ -13,3 +13,5 @@
+ NHSTUB(GetSystemTime,       0xe057bb2b)   // Wrapper um _GetSystemTime(&t), gibt t zurueck
+ // Stufe c2 (Prompt 6, Schreibschutz-Fix), Belege: NOTES.md "Prompt 6 - Stufe c2"
+ NHSTUB(kbd_read_keys,       0xe0040a47)   // Sigfinder + Code: physw_status leeren, GetKbdState, kbd_read_keys_r2
++// Stufe d (Prompt 7)
++NHSTUB(TryPostMessageQueue, 0xdffcc113)   // funcs_by_address.csv; ISR S1/S2 schicken damit Nachricht 1/2 an *(0x9e3c+8)
+--- g1x3_stufe_c2/Makefile	2026-11-12 15:05:10
++++ g1x3_stufe_d/Makefile	2026-11-12 15:15:28
+@@ -25,7 +25,7 @@
+ 	@echo $< '->' $@
+ 	$(CC) $(CFLAGS) -nostdinc -c -o $@ $<
+ 
+-main.elf: entry.o boot.o logger.o kbd_c2.o stubs_auto.o stubs_c.o
++main.elf: entry.o boot.o logger.o kbd_d.o stubs_auto.o stubs_c.o
+ 	@echo '->' $@
+ 	$(CC) $(CFLAGS) -o $@ -Wl,--start-group $^ -lgcc -Wl,--end-group $(LDOPTS)
+ 	( $(NM) $@ | grep ' U ' > $@.syms ) && echo "error: unresolved symbols in $@ (see $@.syms)" && exit 1 || exit 0

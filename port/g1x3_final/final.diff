@@ -1,0 +1,73 @@
+--- chdk/g1x3_stufe_d/boot.c	2026-11-12 15:15:28
++++ chdk/g1x3_final/boot.c	2026-11-12 15:27:20
+@@ -1,9 +1,9 @@
+ /*
+- * boot.c - g1x3 (G1 X Mark III) GM1.00A - STUFE c (Testbuild Lese-Logger, nicht der endgueltige Port)
++ * boot.c - g1x3 (G1 X Mark III) GM1.00A - ENDVERSION (= Stufe d ohne Logger)
+  *
+- * = boot.c aus g1x3_stufe_ab (auf der Kamera getestet) plus:
+- *   - CreateTask-Hook ersetzt zusaetzlich task_InitFileModules (Karte bereit -> Logger darf schreiben)
+- *   - task_Startup legt nach PhySw den Task "KeyLog" an (logger.c, liest nur)
++ * = boot.c aus g1x3_stufe_d (auf der Kamera getestet), entfernt: Logger-Task, InitFileModules-Hook.
++ *   - PhySw als mykbd_task (Tastenlogik kbd_d.c: S1 + Q/SET = S2, SD-Schreibschutzbit loeschen)
++ *   - PhySw_ReleaseSw als Kopie mit virtuellem S2 (Option A)
+  *
+  * Inhalt: nur der Neustart der Canon-Firmware aus dem RAM.
+  *   - Kopie von boot() @0xE0020011 mit CreateTask-Hook (einziger Zweck: TricInit-Fix)
+@@ -41,12 +41,6 @@
+             "    cmp     r0, r3\n"
+             "    it      eq\n"
+             "    ldreq   r3, =task_TricInitTask_my\n"
+-            "    beq     exitHook\n"
+-            "    ldr     r0, =task_InitFileModules\n"  // 0xe0456a0d
+-            "    cmp     r0, r3\n"
+-            "    it      eq\n"
+-            "    ldreq   r3, =init_file_modules_task_my\n"
+-            "exitHook:\n"
+             "    pop    {r0}\n"
+             // die 8 ueberschriebenen Byte @0xdffc5ade ausfuehren, dann weiter in der Firmware
+             "    push    {r1, r2, r3, r4, r5, r6, r7, lr}\n"
+@@ -478,7 +472,6 @@
+             "    bl      sub_e003d870\n"                // init_error_handlers
+             "    bl      sub_e04569ca\n"
+             "    bl      sub_e004074a_my\n"             // PhySw anlegen, Task -> mykbd_task (Stufe c2/d)
+-            "    bl      logger_start\n"               // + Task KeyLog (nur lesen)
+             "    bl      sub_e02b09ee\n"
+             "    bl      sub_e04569e0\n"
+             "    bl      sub_e0554054\n"
+@@ -545,35 +538,6 @@
+ 
+             "    bl      sub_e03b18ee\n"
+             "    ldr     pc, =0xe03b1453\n"             // Continue in firmware (b loc_e03b1496)
+-            "    .ltorg\n"
+-    );
+-}
+-
+-/*************************************************************/
+-//** init_file_modules_task_my @ 0xE0456A0D (wie g7x2, ohne MBR-Patch)
+-void __attribute__((naked,noinline)) init_file_modules_task_my() {
+-    asm volatile (
+-            "    push    {r4, r5, r6, lr}\n"
+-            "    movs    r0, #6\n"
+-            "    bl      sub_e03a5a2a\n"                //  return
+-            "    bl      sub_e04e46d4\n"
+-            "    movs    r4, r0\n"
+-            "    movw    r5, #0x5006\n"
+-            "    beq     loc_e0456a28\n"
+-            "    movs    r1, #0\n"
+-            "    mov     r0, r5\n"
+-            "    bl      sub_e039d90c\n"                // PostLogicalEventToUI_FW
+-            "loc_e0456a28:\n"
+-            "    bl      sub_e04e46fc\n"
+-            "    bl      logger_fs_ready\n"            // + Karte eingehaengt
+-            "    cmp     r4, #0\n"
+-            "    bne     loc_e0456a3c\n"                //  return
+-            "    mov     r0, r5\n"
+-            "    pop.w   {r4, r5, r6, lr}\n"
+-            "    movs    r1, #1\n"
+-            "    b.w     sub_e039d90c\n"                // PostLogicalEventToUI_FW, jump to FW
+-            "loc_e0456a3c:\n"
+-            "    pop     {r4, r5, r6, pc}\n"
+             "    .ltorg\n"
+     );
+ }
